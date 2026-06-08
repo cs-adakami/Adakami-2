@@ -1,0 +1,74 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Prepare Web Directory
+        run: |
+          mkdir www
+          rsync -a --exclude='www' --exclude='.git' --exclude='.github' --exclude='node_modules' ./ www/
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Sync Capacitor Android
+        run: |
+          npx cap add android || true
+          npm install @capacitor/assets --save-dev
+          npx capacitor-assets generate --android
+          npx cap sync android
+
+      - name: Build APK with Gradle
+        working-directory: ./android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Rename APK file
+        run: |
+          mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/Adakami v1.0.${{ github.run_number }} release.apk"
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Adakami
+          path: "android/app/build/outputs/apk/debug/Adakami v1.0.${{ github.run_number }} release.apk"
+
+      - name: Rilis APK ke Halaman Depan GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v1.0.${{ github.run_number }}"
+          name: "Aplikasi Adakami (Build ${{ github.run_number }})"
+          body: "Pembaruan otomatis dari GitHub Actions."
+          files: "android/app/build/outputs/apk/debug/Adakami v1.0.${{ github.run_number }} release.apk"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
